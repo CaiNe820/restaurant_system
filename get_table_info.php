@@ -1,29 +1,45 @@
 <?php
 include 'db.php';
+date_default_timezone_set('Asia/Kuala_Lumpur');
 
-$booking_date = $_GET['booking_date'] ?? '';
-$booking_time = $_GET['booking_time'] ?? '';
+$date = $_GET['date'] ?? '';
+$time = $_GET['time'] ?? '';
 
-$total_tables = 50;
+$total_tables = 10;
 
-/* 同一天同一时间 已被占用的桌数 */
-$sql = "
-SELECT COUNT(DISTINCT table_no) AS used_tables
-FROM orders
-WHERE DATE(order_datetime) = '$booking_date'
-AND TIME(order_datetime) = '$booking_time'
-";
+header('Content-Type: application/json');
 
-$result = mysqli_query($conn, $sql);
-$row = mysqli_fetch_assoc($result);
+if(!$date || !$time){
+    echo json_encode([
+        'remaining' => 0,
+        'next_table' => null
+    ]);
+    exit;
+}
 
-$used = $row['used_tables'] ?? 0;
-$remaining = $total_tables - $used;
-$next_table = $used + 1;
+// 查已使用桌号（安全 prepared statement）
+$stmt = mysqli_prepare($conn, "SELECT table_no FROM bookings WHERE booking_date=? AND booking_time=?");
+mysqli_stmt_bind_param($stmt, "ss", $date, $time);
+mysqli_stmt_execute($stmt);
+$res = mysqli_stmt_get_result($stmt);
 
-if ($remaining < 0) $remaining = 0;
+$used = [];
+while($r = mysqli_fetch_assoc($res)){
+    $used[] = intval($r['table_no']);
+}
+
+// 找下一个可用桌号
+$next_table = null;
+for($i=1; $i<=$total_tables; $i++){
+    if(!in_array($i, $used)){
+        $next_table = $i;
+        break;
+    }
+}
+
+$remaining = $total_tables - count($used);
 
 echo json_encode([
-    'remaining_tables' => $remaining,
-    'next_table' => $remaining > 0 ? $next_table : null
+    'remaining' => $remaining,
+    'next_table' => $next_table
 ]);
